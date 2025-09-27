@@ -42,7 +42,7 @@ router.post('/register', async (req, res) => {
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
@@ -111,39 +111,50 @@ router.post('/login', async (req, res) => {
 
 // Refresh Token
 router.post('/refresh', async (req, res) => {
-  try {
-    const { refreshToken } = req.cookies;
-    
-    if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh token not provided' });
-    }
-
-    // Find user with this refresh token
-    const user = await User.findOne({ 
-      'refreshTokens.token': refreshToken 
-    });
-
-    if (!user) {
-      return res.status(403).json({ message: 'Invalid refresh token' });
-    }
-
-    // Generate new access token
-    const newAccessToken = generateAccessToken(user._id);
-
-    res.json({
-      accessToken: newAccessToken,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName
+    try {
+      const { refreshToken } = req.cookies;
+  
+      if (!refreshToken) {
+        return res.status(401).json({ message: 'Refresh token not provided' });
       }
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
+  
+      // Find user with this refresh token
+      const user = await User.findOne({ 'refreshTokens.token': refreshToken });
+  
+      if (!user) {
+        return res.status(403).json({ message: 'Invalid refresh token' });
+      }
+  
+      // Generate new tokens
+      const { accessToken, refreshToken: newRefreshToken } = generateTokens(user._id);
+  
+      // Replace old refresh token with new one
+      user.refreshTokens = user.refreshTokens.filter(rt => rt.token !== refreshToken);
+      user.refreshTokens.push({ token: newRefreshToken });
+      await user.save();
+  
+      // Set cookie
+      res.cookie('refreshToken', newRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'none',   // 🔑 must be 'none' for cross-domain
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+  
+      res.json({
+        accessToken,
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName
+        }
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  });
 
 // Logout
 router.post('/logout', async (req, res) => {
