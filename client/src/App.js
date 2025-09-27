@@ -16,6 +16,7 @@ import PostDetail from './pages/PostDetail';
 import Profile from './pages/Profile';
 import Dashboard from './pages/Dashboard';
 import ProtectedRoute from './components/ProtectedRoute';
+import SearchResults from './pages/SearchResults';
 
 import './App.css';
 
@@ -33,6 +34,7 @@ function App() {
                 <Route path="/register" element={<Register />} />
                 <Route path="/posts/:id" element={<PostDetail />} />
                 <Route path="/profile/:id" element={<Profile />} />
+                <Route path="/search" element={<SearchResults />} />
                 <Route 
                   path="/create-post" 
                   element={

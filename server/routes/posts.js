@@ -33,6 +33,65 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
+// Add search endpoint BEFORE the /:id route
+router.get('/search', async (req, res) => {
+  try {
+    console.log('Search request received:', req.query); // Debug log
+    
+    const { q, page = 1, limit = 10 } = req.query;
+    
+    if (!q || q.trim().length === 0) {
+      console.log('Empty search query'); // Debug log
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+
+    const searchQuery = q.trim();
+    console.log('Searching for:', searchQuery); // Debug log
+    
+    const query = {
+      published: true,
+      $or: [
+        { title: { $regex: searchQuery, $options: 'i' } },
+        { content: { $regex: searchQuery, $options: 'i' } },
+        { tags: { $in: [new RegExp(searchQuery, 'i')] } }
+      ]
+    };
+
+    console.log('MongoDB query:', JSON.stringify(query, null, 2)); // Debug log
+
+    const posts = await Post.find(query)
+      .populate('author', 'username firstName lastName profilePicture')
+      .populate({
+        path: 'comments',
+        populate: {
+          path: 'author',
+          select: 'username firstName lastName profilePicture'
+        }
+      })
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Post.countDocuments(query);
+
+    console.log('Search results:', { totalFound: total, postsReturned: posts.length }); // Debug log
+
+    res.json({
+      posts,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
+      total,
+      query: searchQuery
+    });
+  } catch (error) {
+    console.error('Search error:', error); // Detailed error log
+    res.status(500).json({ 
+      message: 'Search failed', 
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' 
+    });
+  }
+});
+
 // Get all posts
 router.get('/', async (req, res) => {
   try {
@@ -72,7 +131,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get single post
+// Get single post - AFTER search route
 router.get('/:id', async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)

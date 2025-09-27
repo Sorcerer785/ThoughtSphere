@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import SearchBar from './SearchBar';
 import { PenSquare, User, LogOut, Home, PlusCircle, Moon, Sun } from 'lucide-react';
 
 const Navbar = () => {
@@ -33,6 +34,8 @@ const Navbar = () => {
             <Home size={18} />
             Home
           </Link>
+          
+          <SearchBar className="nav-search" />
           
           {user ? (
             <>
