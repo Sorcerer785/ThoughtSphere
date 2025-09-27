@@ -1,7 +1,7 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
-const auth = require('../middleware/auth');
+const { generateTokens, generateAccessToken } = require('../utils/tokenUtils');
 
 const router = express.Router();
 
@@ -32,15 +32,23 @@ router.post('/register', async (req, res) => {
 
     await user.save();
 
-    // Create JWT token
-    const token = jwt.sign(
-      { userId: user._id }, 
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
+    const { accessToken, refreshToken } = generateTokens(user._id);
+    
+    // Save refresh token to database
+    user.refreshTokens.push({ token: refreshToken });
+    await user.save();
+
+    // Set httpOnly cookie for refresh token
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
 
     res.status(201).json({
-      token,
+      message: 'User registered successfully',
+      accessToken,
       user: {
         id: user._id,
         username: user.username,
@@ -71,15 +79,23 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Create JWT token
-    const token = jwt.sign(
-      { userId: user._id }, 
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
+    const { accessToken, refreshToken } = generateTokens(user._id);
+    
+    // Save refresh token to database
+    user.refreshTokens.push({ token: refreshToken });
+    await user.save();
+
+    // Set httpOnly cookie for refresh token
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
 
     res.json({
-      token,
+      message: 'Login successful',
+      accessToken,
       user: {
         id: user._id,
         username: user.username,
@@ -93,9 +109,82 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Get current user
-router.get('/me', auth, async (req, res) => {
-  res.json(req.user);
+// Refresh Token
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.cookies;
+    
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Refresh token not provided' });
+    }
+
+    // Find user with this refresh token
+    const user = await User.findOne({ 
+      'refreshTokens.token': refreshToken 
+    });
+
+    if (!user) {
+      return res.status(403).json({ message: 'Invalid refresh token' });
+    }
+
+    // Generate new access token
+    const newAccessToken = generateAccessToken(user._id);
+
+    res.json({
+      accessToken: newAccessToken,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Logout
+router.post('/logout', async (req, res) => {
+  try {
+    const { refreshToken } = req.cookies;
+    
+    if (refreshToken) {
+      // Remove refresh token from database
+      await User.updateOne(
+        { 'refreshTokens.token': refreshToken },
+        { $pull: { refreshTokens: { token: refreshToken } } }
+      );
+    }
+
+    // Clear cookie
+    res.clearCookie('refreshToken');
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Logout from all devices
+router.post('/logout-all', async (req, res) => {
+  try {
+    const { refreshToken } = req.cookies;
+    
+    if (refreshToken) {
+      // Remove all refresh tokens for this user
+      const user = await User.findOne({ 'refreshTokens.token': refreshToken });
+      if (user) {
+        user.refreshTokens = [];
+        await user.save();
+      }
+    }
+
+    res.clearCookie('refreshToken');
+    res.json({ message: 'Logged out from all devices successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 });
 
 module.exports = router;
