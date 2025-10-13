@@ -41,7 +41,7 @@ router.post('/register', async (req, res) => {
     // Set httpOnly cookie for refresh token
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true, //process.env.NODE_ENV === 'production',
       sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
@@ -88,7 +88,7 @@ router.post('/login', async (req, res) => {
     // Set httpOnly cookie for refresh token
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,//process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
