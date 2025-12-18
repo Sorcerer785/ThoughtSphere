@@ -86,8 +86,10 @@ router.post('/login', async (req, res) => {
     const { accessToken, refreshToken } = generateTokens(user._id);
     
     // Save refresh token to database
-    user.refreshTokens.push({ token: refreshToken });
-    await user.save();
+    await new RefreshToken({ 
+    token: refreshToken, 
+    user: user._id 
+    }).save();
 
     // Set httpOnly cookie for refresh token
     res.cookie('refreshToken', refreshToken, {
