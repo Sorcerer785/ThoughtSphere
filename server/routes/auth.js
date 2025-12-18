@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { generateTokens, generateAccessToken } = require('../utils/tokenUtils');
+const RefreshToken = require('../models/RefreshToken');
 
 const router = express.Router();
 
@@ -35,13 +36,15 @@ router.post('/register', async (req, res) => {
     const { accessToken, refreshToken } = generateTokens(user._id);
     
     // Save refresh token to database
-    user.refreshTokens.push({ token: refreshToken });
-    await user.save();
+    await new RefreshToken({ 
+    token: refreshToken, 
+    user: user._id 
+    }).save();
 
     // Set httpOnly cookie for refresh token
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true, //process.env.NODE_ENV === 'production',
       sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
@@ -88,8 +91,8 @@ router.post('/login', async (req, res) => {
     // Set httpOnly cookie for refresh token
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, //process.env.NODE_ENV === 'production',
+      sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
@@ -111,50 +114,39 @@ router.post('/login', async (req, res) => {
 
 // Refresh Token
 router.post('/refresh', async (req, res) => {
-    try {
-      const { refreshToken } = req.cookies;
-  
-      if (!refreshToken) {
-        return res.status(401).json({ message: 'Refresh token not provided' });
-      }
-  
-      // Find user with this refresh token
-      const user = await User.findOne({ 'refreshTokens.token': refreshToken });
-  
-      if (!user) {
-        return res.status(403).json({ message: 'Invalid refresh token' });
-      }
-  
-      // Generate new tokens
-      const { accessToken, refreshToken: newRefreshToken } = generateTokens(user._id);
-  
-      // Replace old refresh token with new one
-      user.refreshTokens = user.refreshTokens.filter(rt => rt.token !== refreshToken);
-      user.refreshTokens.push({ token: newRefreshToken });
-      await user.save();
-  
-      // Set cookie
-      res.cookie('refreshToken', newRefreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none',   // 🔑 must be 'none' for cross-domain
-        maxAge: 7 * 24 * 60 * 60 * 1000
-      });
-  
-      res.json({
-        accessToken,
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName
-        }
-      });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  });
+  try {
+    const { refreshToken } = req.cookies;
+    if (!refreshToken) return res.status(401).json({ message: 'Refresh token not provided' });
+
+    // 1. Find the token in the separate collection
+    const tokenDoc = await RefreshToken.findOne({ token: refreshToken });
+    if (!tokenDoc) return res.status(403).json({ message: 'Invalid refresh token' });
+
+    // 2. Find the user associated with that token
+    const user = await User.findById(tokenDoc.user);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // 3. Generate new tokens
+    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user._id);
+
+    // 4. Delete the old token and save the new one (Rotation)
+    await tokenDoc.deleteOne(); 
+    await new RefreshToken({ token: newRefreshToken, user: user._id }).save();
+
+    // 5. Set cookie & Response (Same as before)
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: true, // process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.json({ accessToken, user: { id: user._id, /* ... other fields */ } });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 
 // Logout
 router.post('/logout', async (req, res) => {
@@ -163,10 +155,7 @@ router.post('/logout', async (req, res) => {
     
     if (refreshToken) {
       // Remove refresh token from database
-      await User.updateOne(
-        { 'refreshTokens.token': refreshToken },
-        { $pull: { refreshTokens: { token: refreshToken } } }
-      );
+      await RefreshToken.deleteOne({ token: refreshToken });
     }
 
     // Clear cookie

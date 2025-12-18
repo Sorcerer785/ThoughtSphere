@@ -48,10 +48,6 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
-  refreshTokens: [{
-    token: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now, expires: '7d' }
-  }],
   createdAt: {
     type: Date,
     default: Date.now
