@@ -22,7 +22,13 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true // Important for cookies
 }));
-app.use(express.json());
+//OLD
+// app.use(express.json());
+
+// NEW: Increase limit to 10MB
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
 app.use(cookieParser()); // Add cookie parser
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
