@@ -23,11 +23,11 @@ app.use(cors({
   credentials: true // Important for cookies
 }));
 //OLD
-// app.use(express.json());
-
+app.use(express.json());
+// well the actual error was in multer
 // NEW: Increase limit to 10MB
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// app.use(express.json({ limit: '10mb' }));
+// app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 app.use(cookieParser()); // Add cookie parser
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
